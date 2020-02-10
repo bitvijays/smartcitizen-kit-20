@@ -13,6 +13,13 @@
 #include <PubSubClient.h>
 #include <ESPAsyncWebServer.h>
 
+//lwm2m start
+#include <lwm2m/c_connect.h>
+#include <lwm2m/c_objects.h>
+#include <lwm2m/debug.h>
+#include <lwm2m/network.h>
+//lwm2m end
+
 #include <Arduino.h>
 #include "Shared.h"
 #include "version.h"
@@ -36,7 +43,7 @@ class SckESP
 {
 	private:
 		// Input/Output
-		bool serialDebug = false;		// Interfere with ESP <-> SAM comunnication (use with caution)
+		bool serialDebug = true;		// Interfere with ESP <-> SAM comunnication (use with caution)
 		bool telnetDebug = false;
 		void SAMbusUpdate();
 		void debugOUT(String strOut);
@@ -117,6 +124,11 @@ class SckESP
 		String leadingZeros(String original, int decimalNumber);
 		WiFiUDP Udp;
 		byte packetBuffer[48];
+
+		// LWM2M
+		void setup_lwm2m();
+		void setupDeviceInfo();
+		void loop_lwm2m();
 
 
 	public:

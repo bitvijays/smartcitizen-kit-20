@@ -17,6 +17,8 @@ PubSubClient MQTTclient(wclient);
 // DNS for captive portal
 DNSServer dnsServer;
 
+lwm2m_client_context_t context;
+
 void SckESP::setup()
 {
 	// LED outputs
@@ -37,7 +39,7 @@ void SckESP::setup()
 	macAddr = WiFi.softAPmacAddress();
 	String tailMacAddr = macAddr.substring(macAddr.length() - 5);
 	tailMacAddr.replace(":", "");
-	strncpy(hostname, "Smartcitizen", 20);
+	strncpy(hostname, "SmartCitizen", 20);
 	strncat(hostname, tailMacAddr.c_str(), 4);
 
 	WiFi.hostname(hostname);
@@ -338,6 +340,8 @@ bool SckESP::mqttHellow()
 bool SckESP::mqttPublish()
 {
 	debugOUT(F("Trying MQTT publish..."));
+	debugOUT(F("Entering LWM2M Setup..."));
+	setup_lwm2m();
 
 	if (mqttConnect()) {
 
@@ -973,3 +977,84 @@ String SckESP::epoch2iso(uint32_t toConvert)
 	return isoTime;
 }
 
+
+inline void SckESP::setupDeviceInfo() {
+    context.deviceInstance.manufacturer = "test manufacturer";
+    context.deviceInstance.model_name = "test model";
+    context.deviceInstance.device_type = "sensor";
+    context.deviceInstance.firmware_ver = "1.0";
+    context.deviceInstance.serial_number = "140234-645235-12353";
+    // if LWM2M_DEV_INFO_TIME is enabled
+//    context.deviceInstance.time_offset = 5;
+//    context.deviceInstance.timezone = "+05:00";
+}
+
+void SckESP::setup_lwm2m() {
+    setupDeviceInfo();
+//    configureLwm2mObjects();
+
+//    connectToYourNetwork();
+
+    uint8_t bound_sockets = lwm2m_client_init (&context, "testClient");
+
+    if (bound_sockets == 0)
+    {
+	debugOUT(F("Failed to open socket\n"));
+    }
+    // Add a lwm2m server with unique id 123, lifetime of 100s, no storing of
+    // unsend messages. The host url is either coap:// or coaps://.
+    debugOUT(String F("Inside setup_lwm2m ") );
+//    context.add_server(123, "coap://192.168.1.171", 100, false);
+    assert(lwm2m_add_server(CTX(context), 123, "coap://192.168.1.171", 100, false));
+
+    // Enter your DTLS connection information
+    #ifdef LWM2M_WITH_DTLS
+//    context.use_dtls_psk(123, "publicid", "PSK", sizeof("PSK"));
+    lwm2m_use_dtls_psk(CTX(context), 123, "publicid", "password", sizeof("password"));
+    #endif
+
+    struct timeval tv = {0,0};
+    int result;
+    fd_set readfds = {0};
+        
+    memset(&readfds,sizeof(fd_set),0);
+    for (uint8_t c = 0; c < bound_sockets; ++c)
+        FD_SET(lwm2m_network_native_sock(CTX(context), c), &readfds);
+
+    // Sleep 20sec before doing another main loop run if no packet has been received
+    // and lwm2m_process or lwm2m_watch_and_reconnect has no earlier due time.
+    tv.tv_sec = 20;
+    lwm2m_process(CTX(context));
+    debugOUT(F("Reached at setup_process\n"));
+    if (result == COAP_503_SERVICE_UNAVAILABLE)
+         printf("No server added! Call lwm2m_add_server()\n");
+    else if (result == COAP_505_NO_NETWORK_CONNECTION)
+         fprintf(stderr, "No sockets open. Reinit the network\n");
+    else if (result == COAP_506_DTLS_CONNECTION_DENIED)
+         fprintf(stderr, "DTLS connection denied. Server may not know PSK for client %s\n", CTX(context)->endpointName);
+    else if (result != 0)
+         fprintf(stderr, "lwm2m_step() failed: 0x%X\n", result);
+    lwm2m_watch_and_reconnect(CTX(context),5);
+}
+
+/*
+void SckESP::loop_lwm2m() {
+	struct timeval tv = {5,0};
+    	debugOUT(String F("Inside loop_lwm2m ") );
+	int result = context.process(&tv);
+	if (result == COAP_505_NO_NETWORK_CONNECTION) {
+        // Couldn't open UDP sockets.
+        // Call lwm2m_network_init again after network is availabe again.
+	} else if (result != 0) {
+        // Unexpected error
+        debugOUT(String(F("Something screwed up")));
+    }
+    // If a server connetion gets lost, the lwm2m state machine will change into
+    // BOOTSTRAP_REQUIRED state. The following method will reset the state machine
+    // and the next process() call will attempt a reconnect.
+//    context.watch_and_reconnect(&time_to_next_call, 5);
+
+    // You may go into low power mode on an µC or use context.block_wait() on posix:
+//    context.block_wait(&next_event);
+}
+*/
